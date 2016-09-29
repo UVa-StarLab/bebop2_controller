@@ -1,0 +1,8 @@
+<launch>
+  <include file="$(find vicon_bridge)/launch/vicon.launch" />
+  <include file="$(find bebop_driver)/launch/bebop_node.launch" />
+  <include file="$(find bebop_tools)/launch/joy_teleop.launch" />
+  <node name="movement_limiter" pkg="bebop2_controller" type="movement_limiter_node" output="screen">
+  </node>
+
+</launch>
