@@ -1,0 +1,6 @@
+<launch>
+  <include file="$(find bebop_tools)/launch/joy_teleop_sim.launch" />
+  <include file="$(find cvg_sim_gazebo)/launch/ardrone_testworld.launch" />
+  <node name="movement_limiter" pkg="bebop2_controller" type="movement_limiter_node" output="screen">
+  </node>
+</launch>

@@ -49,6 +49,7 @@ void cmd_callback(const geometry_msgs::Twist::ConstPtr& data)
    #endif
    constrained_cmd_vel = *data;
    constrain_movement();
+   vel_pub.publish(constrained_cmd_vel);
 }
 
 void position_callback(const geometry_msgs::TransformStamped::ConstPtr& data)
@@ -67,6 +68,34 @@ void position_callback(const geometry_msgs::TransformStamped::ConstPtr& data)
    current_pos.yaw = atan2(2.0*(data->transform.rotation.y*data->transform.rotation.z + data->transform.rotation.w*data->transform.rotation.x), data->transform.rotation.w*data->transform.rotation.w - data->transform.rotation.x*data->transform.rotation.x - data->transform.rotation.y*data->transform.rotation.y + data->transform.rotation.z*data->transform.rotation.z);
    current_pos.pitch = asin(-2.0*(data->transform.rotation.x*data->transform.rotation.z - data->transform.rotation.w*data->transform.rotation.y));
    current_pos.roll = atan2(2.0*(data->transform.rotation.x*data->transform.rotation.y + data->transform.rotation.w*data->transform.rotation.z), data->transform.rotation.w*data->transform.rotation.w + data->transform.rotation.x*data->transform.rotation.x - data->transform.rotation.y*data->transform.rotation.y - data->transform.rotation.z*data->transform.rotation.z);
+
+   #if DEBUG
+        //ROS_INFO("X: %f", current_pos.x);
+        //ROS_INFO("Y: %f", current_pos.y);
+        //ROS_INFO("Z: %f", current_pos.z);
+        //ROS_INFO("Roll: %f", current_pos.roll);
+        //ROS_INFO("Pitch: %f", current_pos.pitch);
+        //ROS_INFO("Yaw: %f", current_pos.yaw);
+   #endif
+
+}
+
+void position_callback_sim(const nav_msgs::Odometry::ConstPtr& data)
+/*
+   Called every time a new Odometry msg is published 
+*/
+{
+   #if DEBUG
+        //ROS_INFO("Location Updated");
+   #endif
+
+   current_pos.x = data->pose.pose.position.x;
+   current_pos.y = data->pose.pose.position.y;
+   current_pos.z = data->pose.pose.position.z;
+
+   current_pos.yaw = atan2(2.0*(data->pose.pose.orientation.y*data->pose.pose.orientation.z + data->pose.pose.orientation.w*data->pose.pose.orientation.x), data->pose.pose.orientation.w*data->pose.pose.orientation.w - data->pose.pose.orientation.x*data->pose.pose.orientation.x - data->pose.pose.orientation.y*data->pose.pose.orientation.y + data->pose.pose.orientation.z*data->pose.pose.orientation.z);
+   current_pos.pitch = asin(-2.0*(data->pose.pose.orientation.x*data->pose.pose.orientation.z - data->pose.pose.orientation.w*data->pose.pose.orientation.y));
+   current_pos.roll = atan2(2.0*(data->pose.pose.orientation.x*data->pose.pose.orientation.y + data->pose.pose.orientation.w*data->pose.pose.orientation.z), data->pose.pose.orientation.w*data->pose.pose.orientation.w + data->pose.pose.orientation.x*data->pose.pose.orientation.x - data->pose.pose.orientation.y*data->pose.pose.orientation.y - data->pose.pose.orientation.z*data->pose.pose.orientation.z);
 
    #if DEBUG
         //ROS_INFO("X: %f", current_pos.x);
@@ -113,17 +142,31 @@ void constrain_movement()
    if((current_pos.z <= -z_limit) && (constrained_cmd_vel.linear.z < 0)){
        constrained_cmd_vel.linear.z = 0;
    }
+   
+   constrained_cmd_vel.linear.x = requested_x*cos(-current_pos.roll) - requested_y*sin(-current_pos.roll);
+   constrained_cmd_vel.linear.y = requested_x*sin(-current_pos.roll) + requested_y*cos(-current_pos.roll);
 
+   /*
    constrained_cmd_vel.linear.y = (requested_y * cos(current_pos.roll) - requested_x * (sin(current_pos.roll)/current_pos.roll)) / ((cos(current_pos.roll) * cos(current_pos.roll)) + sin(current_pos.roll) * (sin(current_pos.roll)/current_pos.roll));
 
-   constrained_cmd_vel.linear.x = (requested_x + constrained_cmd_vel.linear.y * sin(current_pos.roll)) / cos(current_pos.roll);
+   constrained_cmd_vel.linear.x = (requested_x + (requested_y * cos(current_pos.roll) - requested_x * (sin(current_pos.roll)/current_pos.roll)) / ((cos(current_pos.roll) * cos(current_pos.roll)) + sin(current_pos.roll) * (sin(current_pos.roll)/current_pos.roll)) * sin(current_pos.roll)) / cos(current_pos.roll);
+   */
+
+   if(constrained_cmd_vel.linear.y > 1)
+	constrained_cmd_vel.linear.y = 1;
+   if(constrained_cmd_vel.linear.y < -1)
+	constrained_cmd_vel.linear.y = -1;
+   if(constrained_cmd_vel.linear.x > 1)
+	constrained_cmd_vel.linear.x = 1;
+   if(constrained_cmd_vel.linear.x < -1)
+	constrained_cmd_vel.linear.x = -1;
 
    //calc_force_vector(constrained_cmd_vel);
    #if DEBUG
-        ROS_INFO("ReqX: %f", requested_x);
-        ROS_INFO("ReqY: %f", requested_y);
-        ROS_INFO("ConX: %f", constrained_cmd_vel.linear.x);
-        ROS_INFO("ConY: %f", constrained_cmd_vel.linear.y);
+        //ROS_INFO("ReqX: %f", requested_x);
+        //ROS_INFO("ReqY: %f", requested_y);
+        //ROS_INFO("ConX: %f", constrained_cmd_vel.linear.x);
+        //ROS_INFO("ConY: %f", constrained_cmd_vel.linear.y);
    #endif
    return;
 }
@@ -144,12 +187,15 @@ int main(int argc, char **argv)
 
    ros::init(argc, argv, "movement_limiter_node");
    ros::NodeHandle nh;
-   ros::Publisher vel_pub = nh.advertise<geometry_msgs::Twist>("bebop/cmd_vel", 1, true);
+   //ros::Publisher vel_pub = nh.advertise<geometry_msgs::Twist>("bebop/cmd_vel", 1, true);
+   ros::Publisher vel_pub = nh.advertise<geometry_msgs::Twist>("ardrone/cmd_vel", 1, true);
    ros::Publisher wrench_pub = nh.advertise<geometry_msgs::WrenchStamped>("bebop/wrench", 1, true);
-   ros::Publisher odom_pub = nh.advertise<nav_msgs::Odometry>("vicon/Bebop2/odom", 1, true);
+   //ros::Publisher odom_pub = nh.advertise<nav_msgs::Odometry>("vicon/Bebop2/odom", 1, true);
    //ros::Publisher reset_pub = nh.advertise<std_msgs::Empty>("/mobile_base/commands/reset_odometry", 1, true);
-   ros::Subscriber position_sub = nh.subscribe("vicon/Bebop2/Bebop2", 10, position_callback);
-   ros::Subscriber vel_target = nh.subscribe("bebop/cmd_vel_user", 10, cmd_callback);
+   //ros::Subscriber position_sub = nh.subscribe("vicon/Bebop2/Bebop2", 10, position_callback);
+   ros::Subscriber position_sub = nh.subscribe("ground_truth/state", 10, position_callback_sim);
+   //ros::Subscriber vel_target = nh.subscribe("bebop/cmd_vel_user", 10, cmd_callback);
+   ros::Subscriber vel_target = nh.subscribe("ardrone/cmd_vel_user", 10, cmd_callback);
    ros::Rate loop_rate = freq;  
 /*
    geometry_msgs::Twist new_vel_msg;
@@ -169,7 +215,7 @@ int main(int argc, char **argv)
       //new_vel_msg.linear.x = PID_calc(lin_ptr, robot_vel_lin, dt);
       //new_vel_msg.angular.z = PID_calc(ang_ptr, robot_vel_ang, dt);
 
-      vel_pub.publish(constrained_cmd_vel);
+      //vel_pub.publish(constrained_cmd_vel);
       //wrench_pub.publish(calculated_wrench);
       //odom_pub.publish(odom);
 
